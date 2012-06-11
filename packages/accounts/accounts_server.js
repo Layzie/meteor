@@ -24,8 +24,12 @@
     .use(function (req, res, next) {
       Fiber(function() {
         // Any non-oauth request will continue down the default middlewares
-        if (req.url.split('/')[1] !== '_oauth')
+        if (req.url.split('/')[1] !== '_oauth') {
           next();
+          return;
+        }
+
+        Meteor._debug('Incoming OAuth request', req.url, req.query);
 
         if (!Meteor.accounts.facebook._appId || !Meteor.accounts.facebook._appUrl)
           throw new Error("Need to call Meteor.accounts.facebook.setup first");
@@ -42,9 +46,12 @@
         var future = oauthFutures[req.query.state];
         if (future) {
           // Unblock the `login` call
+          Meteor._debug("We were expecting you, OAuth request.");
           future.return(handleOauthRequest(req));
         } else {
           // Store this request. We expect to soon get a call to `login`
+          Meteor._debug("We weren't expecting you, but that's fine. "
+                        + "We'll expect the call to login instead.");
           unmatchedOauthRequests[req.query.state] = req;
         }
       }).run();
@@ -107,6 +114,11 @@
           delete oauthFutures[options.oauth.state];
         }
 
+        if (!fbAccessToken) {
+          // if cancelled or not authorized
+          throw new Meteor.Error("Login cancelled or not authorized by user");
+        }
+
         // Fetch user's facebook identity
         var identity = Meteor.http.get(
           "https://graph.facebook.com/me?access_token=" + fbAccessToken).data;
@@ -127,7 +139,6 @@
           throw new Meteor.Error("Couldn't find login token");
         this.setUserId(loginToken.userId);
 
-        // XXX do we need to actually return this here?
         return {
           token: loginToken,
           id: this.userId()
@@ -135,6 +146,10 @@
       } else {
         throw new Error("Unrecognized options for login request");
       }
+  },
+
+  logout: function() {
+    this.setUserId(null);
     }
   });
 
@@ -143,6 +158,13 @@
     var bareUrl = req.url.substring(0, req.url.indexOf('?'));
     var provider = bareUrl.split('/')[2];
     if (provider === 'facebook') {
+      if (req.query.error) {
+        // Either the user didn't authorize access or we cancelled
+        // this outstanding login request (such as when the user
+        // closes the login popup window)
+        return null;
+      }
+
       // Request an access token
       var response = Meteor.http.get(
         "https://graph.facebook.com/oauth/access_token?" +

@@ -8,7 +8,11 @@ if (!Meteor.accounts.facebook) {
   Meteor.accounts.facebook = {};
 }
 
-Meteor.accounts._loginTokens = new Meteor.Collection("accounts._loginTokens");
+Meteor.accounts._loginTokens = new Meteor.Collection(
+  "accounts._loginTokens",
+  null /*manager*/,
+  null /*driver*/,
+  true /*preventAutopublish*/);
 
 Meteor.accounts.facebook.setup = function(appId, appUrl) {
   Meteor.accounts.facebook._appId = appId;
